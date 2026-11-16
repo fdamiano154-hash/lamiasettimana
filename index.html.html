@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>La Mia Settimana</title>
+<style>
+:root{--sage:#7d9378;--sage-d:#5f7660;--beige:#efe6d6;--warm:#fbf8f2;--ink:#2f3a30;--line:#dcd2bf;--card:#fff;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--warm);color:var(--ink);font:17px/1.4 Georgia,'Times New Roman',serif;padding-bottom:90px}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:26px;margin:8px 0 14px;color:var(--sage-d)}h2{font-size:20px;margin:18px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+button,.btn{font:inherit;background:var(--sage);color:#fff;border:0;border-radius:14px;padding:14px 18px;min-height:50px;cursor:pointer}
+button.sec{background:var(--beige);color:var(--ink);border:1px solid var(--line)}
+button.big{width:100%;font-size:19px;margin:8px 0}
+button.sm{min-height:42px;padding:8px 14px}
+button.del{background:#b5675a}
+input,select{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--warm);color:var(--ink);margin:4px 0 10px;min-height:48px}
+label{font-size:14px;opacity:.8}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--beige);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;color:var(--ink);border-radius:0;font-size:14px;padding:12px 2px}
+nav button.on{background:var(--sage);color:#fff}
+.tag{display:inline-block;background:var(--beige);border-radius:10px;padding:2px 10px;font-size:13px;margin-right:6px}
+.muted{opacity:.65;font-size:14px}.price{color:var(--sage-d);font-weight:bold}
+.chk{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.chk input{width:26px;height:26px;margin:0;min-height:0}.done{text-decoration:line-through;opacity:.5}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+var KEY='lamiasettimana_v1';
+var db={ingredienti:[],piatti:[],ricette:[],settimane:[],pasti:[],spesa:{}};
+try{var s=localStorage.getItem(KEY);if(s)db=Object.assign(db,JSON.parse(s))}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+var view='menu',draft=null,sel=null,edit=null;
+var SLOTS=[['Lunedì','cena'],['Martedì','pranzo'],['Martedì','cena'],['Mercoledì','pranzo'],['Mercoledì','cena'],['Giovedì','pranzo']];
+function eur(n){return (n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'})}
+function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function ing(id){return db.ingredienti.find(function(i){return i.id==id})}
+function piatto(id){return db.piatti.find(function(p){return p.id==id})}
+function costoRiga(r){var i=ing(r.ingId);return i&&i.qta>0?r.qta/i.qta*i.prezzo:0}
+function costo(pid){return db.ricette.filter(function(r){return r.piattoId==pid}).reduce(function(a,r){return a+costoRiga(r)},0)}
+function num(v){return parseFloat(String(v).replace(',','.'))||0}
+function go(v){view=v;edit=null;render()}
+
+function pick(slot,usati){
+  var tipo=slot[1];
+  var ok=db.piatti.filter(function(p){return !p.archiviato&&(p.tipo=='entrambi'||p.tipo==tipo)});
+  var recenti=[];db.pasti.slice(-18).forEach(function(m){recenti.push(m.piattoId)});
+  var c=ok.filter(function(p){return usati.indexOf(p.id)<0&&recenti.indexOf(p.id)<0});
+  if(!c.length)c=ok.filter(function(p){return usati.indexOf(p.id)<0});
+  if(!c.length)c=ok;
+  return c.length?c[Math.floor(Math.random()*c.length)].id:null;
+}
+function genera(){
+  var usati=[];draft=SLOTS.map(function(s){var id=pick(s,usati);if(id)usati.push(id);return {giorno:s[0],tipo:s[1],piattoId:id}});render();
+}
+function cambia(i){
+  var usati=draft.map(function(m,k){return k==i?null:m.piattoId}).filter(Boolean);
+  var id=pick(SLOTS[i],usati.concat([draft[i].piattoId]));
+  if(id)draft[i].piattoId=id;render();
+}
+function conferma(){
+  if(draft.some(function(m){return !m.piattoId})){alert('Aggiungi più piatti per pranzo e cena.');return}
+  var w={id:uid(),data:new Date().toISOString(),totale:0};
+  draft.forEach(function(m){var c=costo(m.piattoId);w.totale+=c;db.pasti.push({id:uid(),settimanaId:w.id,giorno:m.giorno,tipo:m.tipo,piattoId:m.piattoId,costo:c})});
+  db.settimane.push(w);save();draft=null;alert('Settimana salvata!');go('storico');
+}
+function pastiDi(wid){return db.pasti.filter(function(m){return m.settimanaId==wid})}
+
+function render(){
+  var tabs=[['menu','Menu'],['piatti','Piatti'],['ingredienti','Ingredienti'],['storico','Storico'],['spesa','Spesa']];
+  document.getElementById('nav').innerHTML=tabs.map(function(t){return '<button class="'+(view==t[0]?'on':'')+'" onclick="go(\''+t[0]+'\')">'+t[1]+'</button>'}).join('');
+  var h='';
+  if(view=='menu')h=vMenu();else if(view=='piatti')h=vPiatti();else if(view=='ingredienti')h=vIng();else if(view=='storico')h=vStorico();else h=vSpesa();
+  document.getElementById('app').innerHTML=h;window.scrollTo(0,0);
+}
+function vMenu(){
+  var h='<h1>La Mia Settimana</h1>';
+  if(!db.piatti.length)h+='<div class="card">Per iniziare aggiungi qualche ingrediente e qualche piatto.</div>';
+  h+='<button class="big" onclick="genera()">Genera il mio menu</button>';
+  if(draft){
+    var tot=0;
+    draft.forEach(function(m,i){var p=piatto(m.piattoId),c=p?costo(p.id):0;tot+=c;
+      h+='<div class="card row"><div><div class="muted">'+m.giorno+' · '+m.tipo+'</div><b>'+(p?esc(p.nome):'Nessun piatto disponibile')+'</b><div class="price">'+eur(c)+'</div></div><button class="sec" onclick="cambia('+i+')">Cambia</button></div>'});
+    h+='<div class="card row"><b>Totale 6 pasti</b><span class="price">'+eur(tot)+'</span></div><button class="big" onclick="conferma()">Conferma e salva settimana</button>';
+  }
+  h+='<h2>Backup dei dati</h2><div class="card"><div class="muted">Salva un file con tutti i tuoi dati, così non li perdi mai.</div><button class="big sec" onclick="esporta()">Salva backup</button><button class="big sec" onclick="document.getElementById(\'imp\').click()">Ripristina da backup</button><input id="imp" type="file" accept=".json,application/json" style="display:none" onchange="importa(this)"></div>';
+  return h;
+}
+function esporta(){
+  var b=new Blob([JSON.stringify(db)],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download='la-mia-settimana-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+}
+function importa(inp){
+  var f=inp.files[0];if(!f)return;var r=new FileReader();
+  r.onload=function(){try{var d=JSON.parse(r.result);if(!d.piatti||!d.ingredienti)throw 0;if(confirm('Sostituire i dati attuali con il backup?')){db=Object.assign({ingredienti:[],piatti:[],ricette:[],settimane:[],pasti:[],spesa:{}},d);save();draft=null;alert('Dati ripristinati!');render()}}catch(e){alert('File non valido.')}};
+  r.readAsText(f);
+}
+function vIng(){
+  var e=edit||{};
+  var h='<h1>Ingredienti</h1><div class="card"><label>Nome</label><input id="in" value="'+esc(e.nome)+'"><label>Quantità nella confezione</label><input id="iq" inputmode="decimal" value="'+esc(e.qta)+'"><label>Unità</label><select id="iu">'+['g','ml','pezzi'].map(function(u){return '<option'+(e.unita==u?' selected':'')+'>'+u+'</option>'}).join('')+'</select><label>Prezzo confezione (€)</label><input id="ip" inputmode="decimal" value="'+esc(e.prezzo)+'"><button class="big" onclick="saveIng()">'+(e.id?'Salva modifiche':'Aggiungi ingrediente')+'</button></div>';
+  db.ingredienti.slice().sort(function(a,b){return a.nome.localeCompare(b.nome)}).forEach(function(i){
+    h+='<div class="card row"><div><b>'+esc(i.nome)+'</b><div class="muted">Confezione '+i.qta+' '+i.unita+' · '+eur(i.prezzo)+'</div></div><div><button class="sm sec" onclick="editIng(\''+i.id+'\')">Modifica</button> <button class="sm del" onclick="delIng(\''+i.id+'\')">Elimina</button></div></div>'});
+  return h;
+}
+function saveIng(){
+  var n=document.getElementById('in').value.trim();if(!n)return;
+  var o={nome:n,qta:num(document.getElementById('iq').value),unita:document.getElementById('iu').value,prezzo:num(document.getElementById('ip').value)};
+  if(edit&&edit.id){Object.assign(ing(edit.id),o)}else{o.id=uid();db.ingredienti.push(o)}
+  save();edit=null;render();
+}
+function editIng(id){edit=ing(id);render()}
+function delIng(id){if(db.ricette.some(function(r){return r.ingId==id})){alert('Ingrediente usato in una ricetta.');return}if(confirm('Eliminare?')){db.ingredienti=db.ingredienti.filter(function(i){return i.id!=id});save();render()}}
+
+function vPiatti(){
+  var e=edit;
+  if(e){
+    var rig=db.ricette.filter(function(r){return r.piattoId==e.id});
+    var h='<h1>'+(e.nuovo?'Nuovo piatto':esc(e.nome))+'</h1><div class="card"><label>Nome del piatto</label><input id="pn" value="'+esc(e.nome)+'"><label>Adatto a</label><select id="pt">'+['pranzo','cena','entrambi'].map(function(t){return '<option'+(e.tipo==t?' selected':'')+'>'+t+'</option>'}).join('')+'</select><button class="big" onclick="savePiatto()">Salva piatto</button></div>';
+    if(!e.nuovo){
+      h+='<h2>Ricetta · '+eur(costo(e.id))+'</h2>';
+      rig.forEach(function(r){var i=ing(r.ingId);h+='<div class="card row"><div>'+esc(i?i.nome:'?')+' · '+r.qta+' '+(i?i.unita:'')+'<div class="price">'+eur(costoRiga(r))+'</div></div><button class="sm del" onclick="delRiga(\''+r.id+'\')">Togli</button></div>'});
+      h+='<div class="card"><label>Aggiungi ingrediente</label><select id="ri">'+db.ingredienti.map(function(i){return '<option value="'+i.id+'">'+esc(i.nome)+' ('+i.unita+')</option>'}).join('')+'</select><label>Quantità usata</label><input id="rq" inputmode="decimal"><button class="big" onclick="addRiga()">Aggiungi alla ricetta</button></div>';
+    }
+    return h+'<button class="big sec" onclick="go(\'piatti\')">Indietro</button>';
+  }
+  var h='<h1>Piatti</h1><button class="big" onclick="edit={nuovo:true,nome:\'\',tipo:\'entrambi\'};render()">Nuovo piatto</button>';
+  db.piatti.slice().sort(function(a,b){return a.nome.localeCompare(b.nome)}).forEach(function(p){
+    h+='<div class="card row" style="'+(p.archiviato?'opacity:.5':'')+'"><div><b>'+esc(p.nome)+'</b><div><span class="tag">'+p.tipo+'</span><span class="price">'+eur(costo(p.id))+'</span></div></div><div><button class="sm sec" onclick="edit=piatto(\''+p.id+'\');render()">Apri</button> <button class="sm sec" onclick="arch(\''+p.id+'\')">'+(p.archiviato?'Ripristina':'Archivia')+'</button> <button class="sm del" onclick="delPiatto(\''+p.id+'\')">Elimina</button></div></div>'});
+  return h;
+}
+function savePiatto(){
+  var n=document.getElementById('pn').value.trim();if(!n)return;var t=document.getElementById('pt').value;
+  if(edit.nuovo){var p={id:uid(),nome:n,tipo:t,archiviato:false};db.piatti.push(p);edit=p}else{edit.nome=n;edit.tipo=t}
+  save();render();
+}
+function addRiga(){var q=num(document.getElementById('rq').value),i=document.getElementById('ri').value;if(!q||!i)return;db.ricette.push({id:uid(),piattoId:edit.id,ingId:i,qta:q});save();render()}
+function delRiga(id){db.ricette=db.ricette.filter(function(r){return r.id!=id});save();render()}
+function arch(id){var p=piatto(id);p.archiviato=!p.archiviato;save();render()}
+function delPiatto(id){if(confirm('Eliminare il piatto? Le settimane salvate restano.')){db.piatti=db.piatti.filter(function(p){return p.id!=id});db.ricette=db.ricette.filter(function(r){return r.piattoId!=id});save();render()}}
+
+function vStorico(){
+  if(sel){
+    var w=db.settimane.find(function(x){return x.id==sel}),h='<h1>Settimana del '+new Date(w.data).toLocaleDateString('it-IT')+'</h1>';
+    pastiDi(sel).forEach(function(m){var p=piatto(m.piattoId);h+='<div class="card row"><div><div class="muted">'+m.giorno+' · '+m.tipo+'</div><b>'+(p?esc(p.nome):'(piatto eliminato)')+'</b></div><span class="price">'+eur(m.costo)+'</span></div>'});
+    return h+'<div class="card row"><b>Totale</b><span class="price">'+eur(w.totale)+'</span></div><button class="big sec" onclick="sel=null;render()">Indietro</button>';
+  }
+  var h='<h1>Storico</h1>';
+  if(!db.settimane.length)h+='<div class="card muted">Nessuna settimana salvata.</div>';
+  db.settimane.slice().reverse().forEach(function(w){h+='<div class="card row" onclick="sel=\''+w.id+'\';render()"><b>'+new Date(w.data).toLocaleDateString('it-IT')+'</b><span class="price">'+eur(w.totale)+'</span></div>'});
+  return h;
+}
+function vSpesa(){
+  var h='<h1>Spesa</h1><select id="ws" onchange="sel=this.value;render()"><option value="">Scegli una settimana…</option>'+db.settimane.slice().reverse().map(function(w){return '<option value="'+w.id+'"'+(sel==w.id?' selected':'')+'>'+new Date(w.data).toLocaleDateString('it-IT')+'</option>'}).join('')+'</select>';
+  if(!sel||!db.settimane.some(function(w){return w.id==sel}))return h;
+  var agg={};
+  pastiDi(sel).forEach(function(m){db.ricette.filter(function(r){return r.piattoId==m.piattoId}).forEach(function(r){agg[r.ingId]=(agg[r.ingId]||0)+r.qta})});
+  var tot=0,chk=db.spesa[sel]||{};
+  Object.keys(agg).forEach(function(k){var i=ing(k);if(!i)return;var c=i.qta>0?agg[k]/i.qta*i.prezzo:0;tot+=c;
+    h+='<label class="chk"><input type="checkbox" '+(chk[k]?'checked':'')+' onchange="tick(\''+k+'\',this.checked)"><span class="'+(chk[k]?'done':'')+'" style="flex:1">'+esc(i.nome)+' — '+(Math.round(agg[k]*100)/100)+' '+i.unita+'</span><span class="price">'+eur(c)+'</span></label>'});
+  return h+'<div class="card row"><b>Totale spesa</b><span class="price">'+eur(tot)+'</span></div>';
+}
+function tick(k,v){db.spesa[sel]=db.spesa[sel]||{};db.spesa[sel][k]=v;save();render()}
+render();
+</script>
+</body>
+</html>
